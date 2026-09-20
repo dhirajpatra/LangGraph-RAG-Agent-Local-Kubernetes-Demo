@@ -1,0 +1,102 @@
+# k8s/application.yaml
+# Consolidates the "Kubernetes App Layer" boxes from the diagram into one
+# file: FastAPI Backend (x2), Celery Worker, Streamlit Frontend, and their
+# Services.
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: rag-backend
+  namespace: rag-demo
+spec:
+  replicas: 2
+  selector:
+    matchLabels: {app: rag-backend}
+  template:
+    metadata:
+      labels: {app: rag-backend}
+    spec:
+      containers:
+        - name: rag-backend
+          image: localhost:5001/rag-app:fixed
+          imagePullPolicy: Always
+          command: ["uvicorn", "app.main:app", "--host", "0.0.0.0", "--port", "8000"]
+          ports:
+            - containerPort: 8000
+          envFrom:
+            - configMapRef: {name: rag-config}
+            - secretRef: {name: rag-secrets}
+          readinessProbe:
+            httpGet: {path: /health, port: 8000}
+            initialDelaySeconds: 10
+            periodSeconds: 5
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: rag-backend-service
+  namespace: rag-demo
+spec:
+  type: ClusterIP
+  selector: {app: rag-backend}
+  ports:
+    - port: 8000
+      targetPort: 8000
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: rag-worker
+  namespace: rag-demo
+spec:
+  replicas: 1
+  selector:
+    matchLabels: {app: rag-worker}
+  template:
+    metadata:
+      labels: {app: rag-worker}
+    spec:
+      containers:
+        - name: rag-worker
+          image: localhost:5001/rag-app:fixed
+          imagePullPolicy: Always
+          command: ["celery", "-A", "app.celery_worker.celery_app", "worker", "--loglevel=INFO"]
+          envFrom:
+            - configMapRef: {name: rag-config}
+            - secretRef: {name: rag-secrets}
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: rag-frontend
+  namespace: rag-demo
+spec:
+  replicas: 1
+  selector:
+    matchLabels: {app: rag-frontend}
+  template:
+    metadata:
+      labels: {app: rag-frontend}
+    spec:
+      containers:
+        - name: rag-frontend
+          image: localhost:5001/rag-app:fixed
+          imagePullPolicy: Always
+          command: ["streamlit", "run", "app/frontend.py", "--server.port=8501", "--server.address=0.0.0.0"]
+          ports:
+            - containerPort: 8501
+          envFrom:
+            - configMapRef: {name: rag-config}
+            - secretRef: {name: rag-secrets}
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: rag-frontend-service
+  namespace: rag-demo
+spec:
+  type: NodePort
+  selector: {app: rag-frontend}
+  ports:
+    - port: 8501
+      targetPort: 8501
+      nodePort: 30085

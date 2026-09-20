@@ -1,0 +1,53 @@
+# k8s/config.yaml
+# Consolidates "Kubernetes Config & Secrets -> ConfigMap: rag-config" and
+# "Secret: rag-secrets" from the diagram into one file (mirrors the
+# config.yaml / infrastructure.yaml / application.yaml split used in the
+# reference project).
+#
+# Only the ConfigMap is meant to be applied from this file. The Secret
+# block below is REFERENCE ONLY (real values must never be committed) —
+# setup.sh creates the actual Secret imperatively from your local .env:
+#
+#   kubectl create secret generic rag-secrets \
+#     --namespace rag-demo \
+#     --from-literal=OPENAI_API_KEY="$OPENAI_API_KEY" \
+#     --from-literal=TAVILY_API_KEY="$TAVILY_API_KEY" \
+#     --from-literal=LANGSMITH_API_KEY="$LANGSMITH_API_KEY" \
+#     --dry-run=client -o yaml | kubectl apply -f -
+---
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: rag-config
+  namespace: rag-demo
+data:
+  DATABASE_URL: "postgresql://raguser:ragpass@postgres-service:5432/ragdb"
+  REDIS_URL: "redis://redis-service:6379/0"
+  CELERY_BROKER_URL: "amqp://guest:guest@rabbitmq-service:5672//"
+  CELERY_RESULT_BACKEND: "redis://redis-service:6379/1"
+  VECTOR_SEARCH_LIMIT: "5"
+  RERANK_TOP_N: "3"
+  SEMANTIC_CACHE_THRESHOLD: "0.92"
+  OPENAI_EMBEDDING_MODEL: "text-embedding-3-small"
+  OPENAI_CHAT_MODEL: "gpt-4o-mini"
+  LANGSMITH_TRACING: "true"
+  LANGSMITH_PROJECT: "FinalProject"
+  LANGSMITH_ENDPOINT: "https://api.smith.langchain.com"
+  BACKEND_URL: "http://rag-backend-service:8000"
+
+# ---------------------------------------------------------------------------
+# REFERENCE ONLY — commented out on purpose so that
+# `kubectl apply -f k8s/config.yaml` can never overwrite the real Secret
+# with placeholders. This just documents the shape of Secret "rag-secrets"
+# that setup.sh creates for you at deploy time:
+#
+# apiVersion: v1
+# kind: Secret
+# metadata:
+#   name: rag-secrets
+#   namespace: rag-demo
+# type: Opaque
+# stringData:
+#   OPENAI_API_KEY: "REPLACE_ME"
+#   TAVILY_API_KEY: "REPLACE_ME"
+#   LANGSMITH_API_KEY: "REPLACE_ME"
