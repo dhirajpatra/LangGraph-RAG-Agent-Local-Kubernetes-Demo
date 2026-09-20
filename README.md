@@ -200,3 +200,16 @@ No other part of the architecture changes.
   is working (`docker run hello-world`), and that you have enough free
   RAM/disk for the `--cpus`/`--memory` values in `setup.sh` (lower them if
   needed).
+
+---
+
+## 7. Contributing
+
+1. Fork the repo on GitHub.
+2. Create a feature branch: `git checkout -b feature/my-change`
+3. Make your changes and commit: `git commit -m "describe your change"`
+4. Push to your fork: `git push origin feature/my-change`
+5. Open a Pull Request against `main` — describe what you changed and why.
+
+Please keep PRs focused (one feature/fix per PR) and ensure `./setup.sh` still
+runs cleanly before submitting.
