@@ -1,8 +1,11 @@
 # LangGraph RAG Agent — Local Kubernetes Demo
 
 This repo reproduces your architecture diagram exactly, running entirely on
-**one Ubuntu laptop** inside a **single-node minikube cluster**. Every box in
-the diagram is a real container:
+**one Ubuntu laptop** inside a **single-node minikube cluster**. 
+
+![RAG architect   ure diagram](docs/rag-demo.png)
+
+Every box in the diagram is a real container:
 
 | Diagram box | Runs as |
 |---|---|
