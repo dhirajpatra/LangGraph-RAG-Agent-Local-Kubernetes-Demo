@@ -1,0 +1,31 @@
+# k8s/evaluation-job.yaml
+# Runs app/evaluation/run_evaluation.py as a one-off Kubernetes Job, using
+# the same image and config/secrets as the rest of the app — matches the
+# diagram's "Evaluation (LLM as Judge) / LangSmith Evaluations" box.
+#
+# Usage:
+#   kubectl apply -f k8s/evaluation-job.yaml
+#   kubectl logs -f job/rag-evaluation -n rag-demo
+#   kubectl delete job rag-evaluation -n rag-demo   # before re-running
+#
+# For the --langsmith variant (uploads results to LangSmith), change the
+# `args` below to ["-m", "app.evaluation.run_evaluation", "--langsmith"].
+apiVersion: batch/v1
+kind: Job
+metadata:
+  name: rag-evaluation
+  namespace: rag-demo
+spec:
+  backoffLimit: 0
+  template:
+    spec:
+      restartPolicy: Never
+      containers:
+        - name: rag-evaluation
+          image: localhost:5001/rag-app:fixed
+          imagePullPolicy: Always
+          command: ["python"]
+          args: ["-m", "app.evaluation.run_evaluation"]
+          envFrom:
+            - configMapRef: {name: rag-config}
+            - secretRef: {name: rag-secrets}

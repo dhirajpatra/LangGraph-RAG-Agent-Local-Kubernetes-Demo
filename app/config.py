@@ -4,18 +4,8 @@ cluster are injected from ConfigMap "rag-config" (non-secret) and
 Secret "rag-secrets" (API keys) via envFrom in every Deployment.
 """
 import os
-from dotenv import load_dotenv
-from pydantic_settings import BaseSettings, SettingsConfigDict
-load_dotenv()
 
-OPENAI_API_KEY = os.getenv("OPENAI_API_KEY", "")
-OPENAI_EMBEDDING_MODEL = os.getenv("OPENAI_EMBEDDING_MODEL", "text-embedding-3-small")
-OPENAI_CHAT_MODEL = os.getenv("OPENAI_CHAT_MODEL", "gpt-4o-mini")
-EMBEDDING_DIMENSION = int(os.getenv("EMBEDDING_DIM", 1536))
-OPENAI_CHAT_MODEL = os.getenv("OPENAI_CHAT_MODEL", "gpt-4o-mini")
-SEMANTIC_CACHE_THRESHOLD = float(os.getenv("SEMANTIC_CACHE_THRESHOLD", 0.92))
-RERANK_TOP_N = int(os.getenv("RERANK_TOP_N", 3))
-VECTOR_SEARCH_LIMIT = int(os.getenv("VECTOR_SEARCH_LIMIT", 5))
+from pydantic_settings import BaseSettings, SettingsConfigDict
 
 
 class Settings(BaseSettings):
@@ -24,9 +14,8 @@ class Settings(BaseSettings):
     # External managed APIs
     openai_api_key: str = ""
     tavily_api_key: str = ""
-    openai_embedding_model: str = OPENAI_EMBEDDING_MODEL
-    embedding_dimension: int = EMBEDDING_DIMENSION  
-    openai_chat_model: str = OPENAI_CHAT_MODEL
+    openai_embedding_model: str = "text-embedding-3-small"
+    openai_chat_model: str = "gpt-4o-mini"
 
     # LangSmith
     langsmith_api_key: str = ""
@@ -41,9 +30,18 @@ class Settings(BaseSettings):
     celery_result_backend: str = "redis://localhost:6379/1"
 
     # RAG tuning
-    vector_search_limit: int = VECTOR_SEARCH_LIMIT
-    rerank_top_n: int = RERANK_TOP_N
-    semantic_cache_threshold: float = SEMANTIC_CACHE_THRESHOLD
+    vector_search_limit: int = 5
+    rerank_top_n: int = 3
+    semantic_cache_threshold: float = 0.92
+
+    # Guardrails
+    max_question_length: int = 2000
+    max_answer_length: int = 4000
+    guardrails_block_pii_in_output: bool = True
+
+    # Evaluation (LLM-as-judge)
+    eval_judge_model: str = "gpt-4o-mini"
+    langsmith_eval_project: str = "FinalProject-Eval"
 
     # Frontend
     backend_url: str = "http://localhost:8000"

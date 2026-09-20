@@ -15,6 +15,8 @@ cluster on one laptop.
 | Async ingestion | Celery worker | `app/celery_worker.py` — Deployment `rag-worker`, broker RabbitMQ, result backend Redis |
 | Agent orchestration | LangGraph state machine | `app/agents/rag_graph.py` — thin wiring only, delegates to `app/services/*` |
 | Business logic | Services layer | `app/services/{embedding,cache,retrieval,grading,generation,web_search,ingestion}_service.py` |
+| Guardrails | Input/output safety checks | `app/guardrails/{input,output}_guardrails.py` — rule-based, run as graph nodes |
+| Evaluation | LLM-as-judge scoring | `app/evaluation/{evaluators,dataset,langsmith_eval,run_evaluation}.py` |
 | Vector store | Postgres + pgvector | Deployment `postgres`, Service `postgres-service` |
 | Semantic cache | Redis Stack (RediSearch/HNSW) | Deployment `redis`, Service `redis-service` |
 | Task broker | RabbitMQ | Deployment `rabbitmq`, Service `rabbitmq-service` |
@@ -51,15 +53,32 @@ orchestration and makes each capability independently testable/reusable:
 Browser -> rag-frontend-service (30085) -> Streamlit
         -> rag-backend-service (8000) -> FastAPI /api/v1/advanced/query
         -> LangGraph agent:
-             embed_question -> check_cache
-               (hit)  -> return cached answer
-               (miss) -> retrieve_documents -> grade_context
-                           (strong) -> rerank_context -> generate_answer
-                           (weak/empty) -> web_search -> generate_answer
-                         -> write_cache -> return answer
+             check_input_guardrail
+               (blocked) -> return apology, strategy=blocked_input
+               (allowed) -> embed_question -> check_cache
+                 (hit)  -> return cached answer
+                 (miss) -> retrieve_documents -> grade_context
+                             (strong) -> rerank_context -> generate_answer
+                             (weak/empty) -> web_search -> generate_answer
+                           -> check_output_guardrail
+                             (blocked) -> return apology, strategy=blocked_output (never cached)
+                             (allowed) -> write_cache -> return answer
 ```
 
-## 5. Request flow (ingestion)
+## 5. Guardrails vs. evaluation
+
+Two different layers, easy to conflate:
+
+- **Guardrails** (`app/guardrails/`) run on *every* request, inline, inside
+  the graph. Rule-based (regex), not an LLM call, so they add negligible
+  latency/cost. They gate what reaches the LLM and what reaches the cache.
+- **Evaluation** (`app/evaluation/`) runs *offline*, against a held-out
+  dataset, using an LLM judge (`EVAL_JUDGE_MODEL`) to score Correctness,
+  Faithfulness, Context Relevance, Answer Quality, and User Satisfaction.
+  It's how you measure quality over time, not how you protect a live
+  request.
+
+## 6. Request flow (ingestion)
 
 ```
 Streamlit "Ingest a document" -> POST /api/v1/advanced/ingest-async
@@ -69,7 +88,7 @@ Streamlit "Ingest a document" -> POST /api/v1/advanced/ingest-async
      -> db.insert_document (Postgres/pgvector)
 ```
 
-## 6. Delivery pipeline (local minikube)
+## 7. Delivery pipeline (local minikube)
 
 ```
 Dockerfile -> docker build -> localhost:5001/rag-app:fixed
@@ -80,7 +99,8 @@ Dockerfile -> docker build -> localhost:5001/rag-app:fixed
 
 See `README.md` for the full step-by-step setup.
 
-## 7. Future work
-- Swap OpenAI for a local Ollama-served SLM (see README §5).
-- Add LangSmith LLM-as-judge evaluation jobs against a held-out question set.
+## 8. Future work
+- Swap OpenAI for a local Ollama-served SLM (see README §8).
+- Move beyond the built-in sample eval set — evaluate against real ingested
+  documents and questions.
 - Horizontal pod autoscaling for `rag-backend` under load.

@@ -20,6 +20,7 @@ Every box in the diagram is a real container:
 | LangGraph RAG Agent (`app/agents/rag_graph.py`) | runs *inside* the FastAPI backend pods, delegates to `app/services/*` |
 | OpenAI Embeddings / Chat, Tavily Search | called over the internet from inside the pods (only external calls made) |
 | LangSmith tracing | enabled via `LANGSMITH_*` env vars, also called over the internet |
+| Evaluation (LLM as Judge) | `app/evaluation/` — Correctness, Faithfulness, Context Relevance, Answer Quality, User Satisfaction |
 
 Only the OpenAI, Tavily and LangSmith API calls leave your laptop. Everything
 else — frontend, backend, worker, Postgres+pgvector, Redis, RabbitMQ — runs
@@ -45,11 +46,14 @@ app/
     generation_service.py
     ingestion_service.py
 docs/HLD.md                 high-level design doc
+app/guardrails/                input/output guardrails (rule-based, in-graph)
+app/evaluation/                 LLM-as-judge evaluators + LangSmith wiring
 k8s/
   namespace.yaml
   config.yaml               ConfigMap rag-config (+ commented Secret reference)
   infrastructure.yaml         Postgres, Redis Stack, RabbitMQ
   application.yaml             backend, worker, frontend Deployments + Services
+  evaluation-job.yaml            one-off batch Job for offline evaluation
 Dockerfile, requirements.txt, setup.sh, cleanup.sh, .env.example
 ```
 
@@ -168,7 +172,66 @@ kubectl port-forward -n rag-demo svc/rabbitmq-service 15672:15672
 
 ---
 
-## 5. Moving to Ollama / local SLMs later
+## 5. Guardrails
+
+`app/guardrails/` runs two fast, rule-based (no LLM call) checks as actual
+nodes inside the LangGraph agent — not an afterthought bolted onto the
+router:
+
+- **Input guardrail** (`input_guardrails.py`), before `embed_question`:
+  rejects empty/oversized questions, blocks a small set of prompt-injection
+  phrases ("ignore previous instructions", etc.), can block a configurable
+  keyword list, and redacts emails/phone numbers/card-like numbers before
+  the question ever reaches an LLM.
+- **Output guardrail** (`output_guardrails.py`), right after
+  `generate_answer` and before `write_cache`: rejects empty/oversized
+  answers and redacts any PII the model echoed back. Because this runs
+  *before* the cache-write node in the graph, a blocked answer is never
+  written to the semantic cache and can never be re-served later.
+
+A blocked request still returns `HTTP 200` with `strategy: "blocked_input"`
+or `"blocked_output"` and a plain-language message in `answer` — the
+Streamlit UI just shows it like any other answer. Tune the limits and
+keyword list in `.env` (`MAX_QUESTION_LENGTH`, `MAX_ANSWER_LENGTH`,
+`GUARDRAILS_BLOCK_PII_IN_OUTPUT`) or directly in
+`app/guardrails/input_guardrails.py`.
+
+---
+
+## 6. Evaluation
+
+`app/evaluation/` implements the diagram's "Evaluation (LLM as Judge)" box
+— Correctness, Faithfulness (Groundedness), Context Relevance, Answer
+Quality, and User Satisfaction, each scored 1–5 by an LLM judge
+(`EVAL_JUDGE_MODEL`, defaults to `gpt-4o-mini`, same as the diagram).
+
+This is deliberately separate from the guardrails above: guardrails are
+cheap/synchronous and gate every single request; evaluation is an
+LLM-based, offline/batch process you run against a held-out question set.
+
+```bash
+# Local — always works, no LangSmith account needed. Runs the real agent
+# (real OpenAI/Tavily calls) over app/evaluation/data/eval_dataset.json
+# and prints a per-example + summary score table.
+python -m app.evaluation.run_evaluation
+
+# Also uploads the dataset to LangSmith and logs results there
+# (needs LANGSMITH_API_KEY in .env):
+python -m app.evaluation.run_evaluation --langsmith
+
+# Or run it as a one-off job inside the cluster:
+kubectl apply -f k8s/evaluation-job.yaml
+kubectl logs -f job/rag-evaluation -n rag-demo
+kubectl delete job rag-evaluation -n rag-demo   # before re-running
+```
+
+Replace `app/evaluation/data/eval_dataset.json` with your own
+question/reference-answer pairs to evaluate against your actual ingested
+documents.
+
+---
+
+## 7. Moving to Ollama / local SLMs later
 
 Right now `app/config.py` + `app/agents/rag_graph.py` call OpenAI directly via
 `langchain-openai`. When you're ready to swap in Ollama:
@@ -184,7 +247,7 @@ No other part of the architecture changes.
 
 ---
 
-## 6. Troubleshooting
+## 8. Troubleshooting
 
 - **`docker: permission denied`** — `setup.sh` adds you to the `docker`
   group, but that only takes effect in new shells. Run `newgrp docker` (or
@@ -203,7 +266,7 @@ No other part of the architecture changes.
 
 ---
 
-## 7. Contributing
+## 9. Contributing
 
 1. Fork the repo on GitHub.
 2. Create a feature branch: `git checkout -b feature/my-change`
