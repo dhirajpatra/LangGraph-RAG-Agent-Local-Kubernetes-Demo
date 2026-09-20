@@ -11,8 +11,10 @@ Requires the redis-stack-server image (see k8s/infrastructure.yaml).
 (Moved here from app/cache.py — app/cache.py now just re-exports these
 functions so any old imports keep working.)
 """
+import os
 import struct
 from typing import List, Optional
+from dotenv import load_dotenv
 
 import numpy as np
 import redis
@@ -21,10 +23,12 @@ from redis.commands.search.indexDefinition import IndexDefinition, IndexType
 from redis.commands.search.query import Query
 
 from app.config import settings
+load_dotenv()
 
 INDEX_NAME = "idx:semantic_cache"
 PREFIX = "cache:"
-EMBEDDING_DIM = 1536
+EMBEDDING_DIM = int(os.getenv("EMBEDDING_DIM", 1536))
+SEMANTIC_CACHE_THRESHOLD = float(os.getenv("SEMANTIC_CACHE_THRESHOLD", 0.8))
 
 _client: Optional[redis.Redis] = None
 
